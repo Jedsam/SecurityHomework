@@ -42,6 +42,9 @@
 .cache/
 build/
 
+# clangd
+.clangd
+
 # CMake/Make files
 CMakeCache.txt
 Makefile
