@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define SERVER_PORT 63349
+#include "defines.hpp"
 
 int main() {
     std::cout << std::format("User is up!") << std::endl;

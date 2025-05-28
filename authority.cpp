@@ -7,13 +7,13 @@
 #include "defines.hpp"
 
 int main() {
-    std::cout << std::format("The server is starting!") << std::endl;
+    std::cout << std::format("The Authority Server is starting") << std::endl;
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0); // IPv4, TCP
 
     // Server address
     sockaddr_in serverAddress;
     serverAddress.sin_family = AF_INET; // IPv4
-    serverAddress.sin_port = htons(SERVER_PORT);
+    serverAddress.sin_port = htons(AUTHORITY_PORT);
     serverAddress.sin_addr.s_addr = INADDR_ANY; // Make the socket not listen to any particular IP and instead
     // make it listen to all the available IPs.
 
