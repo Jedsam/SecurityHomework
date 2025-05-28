@@ -1,0 +1,50 @@
+# Prerequisites
+*.d
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+
+# PDF
+*.pdf
+
+# Cache and build folder
+.cache/
+build/
+
+# CMake/Make files
+CMakeCache.txt
+Makefile
+CMakeFiles/
+cmake_install.cmake
+
