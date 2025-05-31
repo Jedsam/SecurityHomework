@@ -33,8 +33,7 @@ int main() {
         break;
     }
 
-    // closing the socket.
+    // closing the socket
     close(serverSocket);
     return 0;
 }
-
