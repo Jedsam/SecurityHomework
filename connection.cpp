@@ -14,7 +14,6 @@
 int Authority::sendDigitalSignature(int serverSocket, unsigned char authority_pk[], unsigned char authority_sk[], size_t authority_pk_size) {
     int clientSocket = accept(serverSocket, nullptr, nullptr);
 
-
     SignRequest signRequest;
     ssize_t r = recv(clientSocket, &signRequest, sizeof(signRequest), MSG_WAITALL);
 
@@ -54,11 +53,12 @@ int Authority::sendDigitalSignature(int serverSocket, unsigned char authority_pk
         std::cout << "Sent signature to client\n";
     }
 
-    delete[] msg;
     close(clientSocket);
     return 0;
 }
-int Authority::getDigitalSignature(int clientSocket, const char* identifier, unsigned char user_pk[], size_t user_pk_size) {
+std::optional<SignedResponse>  Authority::getDigitalSignature(const char* identifier, unsigned char user_pk[], size_t user_pk_size) {
+    // creating socket
+    int clientSocket = socket(AF_INET, SOCK_STREAM, 0);
     // specifying address
     sockaddr_in serverAddress;
     serverAddress.sin_family = AF_INET;
@@ -68,7 +68,7 @@ int Authority::getDigitalSignature(int clientSocket, const char* identifier, uns
     // sending connection request
     if (connect(clientSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) == -1) {
         std::cout << std::format("Error connecting to CA: {}", serverAddress.sin_addr.s_addr) << std::endl;
-        return 0;
+        return std::nullopt;
     }
 
 
@@ -79,6 +79,11 @@ int Authority::getDigitalSignature(int clientSocket, const char* identifier, uns
 
     // Send the struct
     ssize_t r = send(clientSocket, &signRequest, sizeof(signRequest), 0);
+    if (r != sizeof(signRequest)) {
+        std::cerr << "Failed to receive signature response\n";
+        close(clientSocket);
+        return std::nullopt;
+    }
     Logger::Log(std::format("Expected {} sent actual {} sized message\n", sizeof(signRequest), r));
     std::cout << std::format("The user sent the identifier and public key!\n");
 
@@ -90,24 +95,17 @@ int Authority::getDigitalSignature(int clientSocket, const char* identifier, uns
     if (r != sizeof(response)) {
         std::cerr << "Failed to receive signature response\n";
         close(clientSocket);
-        return 1;
+        return std::nullopt;
     }
 
-    // Verify signature over (identifier + public key)
-    size_t msg_len = MAX_ID_LEN + user_pk_size;
-    unsigned char* msg = new unsigned char[msg_len];
-    memcpy(msg, identifier, MAX_ID_LEN);
-    memcpy(msg + MAX_ID_LEN, user_pk, user_pk_size);
+    // if (crypto_sign_verify_detached(response.signature, msg, msg_len, response.signer_pk) == 0) {
+    //     std::cout << "✔ Signature is valid — Authority trusts this identity and key!\n";
+    // } else {
+    //     std::cerr << "✘ Signature verification failed!\n";
+    // }
 
-    if (crypto_sign_verify_detached(response.signature, msg, msg_len, response.signer_pk) == 0) {
-        std::cout << "✔ Signature is valid — Authority trusts this identity and key!\n";
-    } else {
-        std::cerr << "✘ Signature verification failed!\n";
-    }
 
-    delete[] msg;
-
-// closing socket
+    // closing socket
     close(clientSocket);
-    return 1;
+    return response;
 }
