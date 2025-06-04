@@ -98,11 +98,6 @@ std::optional<SignedResponse>  Authority::getDigitalSignature(const char* identi
         return std::nullopt;
     }
 
-    // if (crypto_sign_verify_detached(response.signature, msg, msg_len, response.signer_pk) == 0) {
-    //     std::cout << "✔ Signature is valid — Authority trusts this identity and key!\n";
-    // } else {
-    //     std::cerr << "✘ Signature verification failed!\n";
-    // }
 
 
     // closing socket

@@ -6,13 +6,15 @@
 #include "defines.hpp"
 
 struct Handshake {
+    unsigned char identifier[MAX_ID_LEN];
     unsigned char nonce[crypto_box_NONCEBYTES];
     unsigned char signature[crypto_sign_BYTES];
+    unsigned char public_key[crypto_kx_PUBLICKEYBYTES];
 };
 
 struct SignRequest {
     unsigned char identifier[MAX_ID_LEN];
-    unsigned char public_key[crypto_sign_PUBLICKEYBYTES];
+    unsigned char public_key[crypto_kx_PUBLICKEYBYTES];
 };
 struct SignedResponse {
     unsigned char signature[crypto_sign_BYTES];

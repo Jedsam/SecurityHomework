@@ -39,12 +39,25 @@ int main() {
 
     // Get the digital signature of user
     std::optional<SignedResponse> optResponse = Authority::getDigitalSignature(identifier, user_pk, sizeof(user_pk));
-    if (optResponse.has_value()) {
-        SignedResponse signedResponse = optResponse.value();
-    } else {
+    if (!optResponse.has_value()) {
         std::cerr << "Error trying to get a response from CA\n";
         return -1;
     }
+
+
+    // Creating handshake
+    Handshake handshake_user;
+    // Generate nonce
+    randombytes_buf(handshake_user.nonce, sizeof(handshake_user.nonce));
+
+    std::string formatted_nonce;
+    for (int i = 0; i < crypto_kx_PUBLICKEYBYTES; ++i) {
+        formatted_nonce += std::format("{:02x}", handshake_user.nonce[i]);
+    }
+    std::cout << "Nonce: " << formatted_nonce << std::endl;
+    std::memcpy(handshake_user.signature, optResponse->signature, sizeof(handshake_user.signature));
+    std::memcpy(handshake_user.identifier, identifier, sizeof(identifier));
+    std::memcpy(handshake_user.public_key, user_pk, sizeof(user_pk));
 
     // Connect to the server
     // creating socket
@@ -61,23 +74,30 @@ int main() {
         return -1;
     }
 
-    // Creating handshake
-    Handshake handshake;
-    // Generate nonce
-    randombytes_buf(handshake.nonce, sizeof(handshake.nonce));
-
-    std::string formatted_nonce;
-    for (int i = 0; i < crypto_kx_PUBLICKEYBYTES; ++i) {
-        formatted_nonce += std::format("{:02x}", handshake.nonce[i]);
-    }
-    std::cout << "Nonce: " << formatted_nonce << std::endl;
-    std::memcpy(handshake.signature, optResponse->signature, sizeof(handshake.signature));
-
-    ssize_t r = send(clientSocket, &handshake, sizeof(handshake), 0);
-    if (r != sizeof(handshake)) {
-        std::cerr << "Failed to send handshake 1\n";
+    ssize_t r = send(clientSocket, &handshake_user, sizeof(handshake_user), 0);
+    if (r != sizeof(handshake_user)) {
+        std::cerr << "Failed to send handshake\n";
         close(clientSocket);
         return -1;
+    }
+    // Recieve handshake from server
+
+    Handshake handshake_server;
+    r = recv(clientSocket, &handshake_server, sizeof(handshake_server), MSG_WAITALL);
+    if (r != sizeof(handshake_server)) {
+        std::cerr << "Failed to receive signature response\n";
+        close(clientSocket);
+        return -1;
+    }
+
+    unsigned char msg[MAX_ID_LEN + crypto_kx_PUBLICKEYBYTES];
+    std::memcpy(msg, handshake_server.identifier, MAX_ID_LEN);
+    std::memcpy(msg + MAX_ID_LEN, handshake_server.public_key, crypto_kx_PUBLICKEYBYTES);
+
+    if (crypto_sign_verify_detached(handshake_server.signature, msg, sizeof(msg), optResponse->signer_pk) == 0) {
+        std::cout << "Server is verified: CA signed their identity + public key.\n";
+    } else {
+        std::cerr << "Invalid server: signature not trusted by the Authority.\n";
     }
 
 
