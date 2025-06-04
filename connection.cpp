@@ -9,38 +9,21 @@
 
 #include "defines.hpp"
 #include "Logger.hpp"
-#include "authority.hpp"
 #include "connection.hpp"
 
 int Authority::sendDigitalSignature(int serverSocket, unsigned char authority_pk[], unsigned char authority_sk[], size_t authority_pk_size) {
     int clientSocket = accept(serverSocket, nullptr, nullptr);
-    // Receive identifier length first
-    uint16_t id_len_net;
-    ssize_t r = recv(clientSocket, &id_len_net, sizeof(id_len_net), MSG_WAITALL);
-    Logger::Log(std::format("Expected {} recieved actual {} sized message\n", sizeof(id_len_net), r));
-    if (r != sizeof(id_len_net)) {
-        std::cerr << "Failed to receive identifier length\n";
-        close(clientSocket);
-        return -1;
-    }
-
-    uint16_t id_len = ntohs(id_len_net);
-    if (id_len == 0 || id_len > MAX_ID_LEN) {
-        std::cerr << "Invalid identifier length\n";
-        close(clientSocket);
-        return -1;
-    }
 
     // Receive identifier string
-    char identifier[MAX_ID_LEN + 1] = {0};
-    r = recv(clientSocket, identifier, id_len, MSG_WAITALL);
-    Logger::Log(std::format("Expected {} recieved actual {} sized message\n", id_len, r));
-    if (r != id_len) {
+    char identifier[MAX_ID_LEN] = {0};
+    ssize_t r = recv(clientSocket, identifier, MAX_ID_LEN, MSG_WAITALL);
+    Logger::Log(std::format("Expected {} recieved actual {} sized message\n", MAX_ID_LEN, r));
+    if (r != MAX_ID_LEN) {
         std::cerr << "Failed to receive identifier\n";
         close(clientSocket);
         return -1;
     }
-    identifier[id_len] = '\0';
+    identifier[MAX_ID_LEN] = '\0';
     std::cout << "Received ID: " << identifier << std::endl;
 
     // Receive client's public key (X25519)
@@ -55,10 +38,10 @@ int Authority::sendDigitalSignature(int serverSocket, unsigned char authority_pk
 
 
     // Prepare message to sign = identifier + public key
-    size_t msg_len = id_len + sizeof(client_pk);
+    size_t msg_len = MAX_ID_LEN + sizeof(client_pk);
     unsigned char* msg = new unsigned char[msg_len];
-    memcpy(msg, identifier, id_len);
-    memcpy(msg + id_len, client_pk, sizeof(client_pk));
+    memcpy(msg, identifier, MAX_ID_LEN);
+    memcpy(msg + MAX_ID_LEN, client_pk, sizeof(client_pk));
 
     // Sign message
     SignedResponse response;
@@ -79,7 +62,7 @@ int Authority::sendDigitalSignature(int serverSocket, unsigned char authority_pk
     close(clientSocket);
     return 0;
 }
-int Authority::getDigitalSignature(int clientSocket, const char* identifier, uint16_t id_len, unsigned char user_pk[], size_t user_pk_size) {
+int Authority::getDigitalSignature(int clientSocket, const char* identifier, unsigned char user_pk[], size_t user_pk_size) {
     // specifying address
     sockaddr_in serverAddress;
     serverAddress.sin_family = AF_INET;
@@ -92,14 +75,10 @@ int Authority::getDigitalSignature(int clientSocket, const char* identifier, uin
         return 0;
     }
 
-    // Send identifier length
-    uint16_t id_len_net = htons(id_len);
-    ssize_t r = send(clientSocket, &id_len_net, sizeof(id_len_net), 0);
-    Logger::Log(std::format("Expected {} sent actual {} sized message\n", sizeof(id_len_net), r));
 
     // Send identifier string
-    r = send(clientSocket, identifier, id_len, 0);
-    Logger::Log(std::format("Expected {} sent actual {} sized message\n", id_len, r));
+    ssize_t r = send(clientSocket, identifier, MAX_ID_LEN, 0);
+    Logger::Log(std::format("Expected {} sent actual {} sized message\n", MAX_ID_LEN, r));
 
     // send client public key
     r = send(clientSocket, user_pk, user_pk_size, 0);
@@ -117,10 +96,10 @@ int Authority::getDigitalSignature(int clientSocket, const char* identifier, uin
     }
 
     // Verify signature over (identifier + public key)
-    size_t msg_len = id_len + user_pk_size;
+    size_t msg_len = MAX_ID_LEN + user_pk_size;
     unsigned char* msg = new unsigned char[msg_len];
-    memcpy(msg, identifier, id_len);
-    memcpy(msg + id_len, user_pk, user_pk_size);
+    memcpy(msg, identifier, MAX_ID_LEN);
+    memcpy(msg + MAX_ID_LEN, user_pk, user_pk_size);
 
     if (crypto_sign_verify_detached(response.signature, msg, msg_len, response.signer_pk) == 0) {
         std::cout << "✔ Signature is valid — Authority trusts this identity and key!\n";

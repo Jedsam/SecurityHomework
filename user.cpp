@@ -21,8 +21,7 @@ int main() {
 
     Logger::Init("user_log.txt");
     // client identifier
-    const char* identifier = "bobTheReal";
-    uint16_t id_len = static_cast<uint16_t>(strlen(identifier));
+    const char identifier[MAX_ID_LEN]= "bobTheReal";
 
     // ECDH keys setup
     unsigned char user_pk[crypto_kx_PUBLICKEYBYTES], user_sk[crypto_kx_SECRETKEYBYTES];
@@ -40,7 +39,7 @@ int main() {
     // creating socket
     int clientSocket = socket(AF_INET, SOCK_STREAM, 0);
 
-    Authority::getDigitalSignature(clientSocket, identifier, id_len, user_pk, sizeof(user_pk));
+    Authority::getDigitalSignature(clientSocket, identifier, user_pk, sizeof(user_pk));
 
     // closing socket
     close(clientSocket);
