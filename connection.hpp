@@ -5,7 +5,7 @@
 #include <cstddef>
 #include "defines.hpp"
 
-struct Handshake_1 {
+struct Handshake {
     unsigned char nonce[crypto_box_NONCEBYTES];
     unsigned char signature[crypto_sign_BYTES];
 };

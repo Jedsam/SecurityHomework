@@ -18,8 +18,8 @@ int main() {
 
     Logger::Init("server_log.txt");
     // ECDH keys setup
-    unsigned char user_pk[crypto_kx_PUBLICKEYBYTES], user_sk[crypto_kx_SECRETKEYBYTES];
-    crypto_kx_keypair(user_pk, user_sk);  // Create PK and SK pairs
+    unsigned char server_pk[crypto_kx_PUBLICKEYBYTES], server_sk[crypto_kx_SECRETKEYBYTES];
+    crypto_kx_keypair(server_pk, server_sk);  // Create PK and SK pairs
 
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);  // IPv4, TCP
     // Server address

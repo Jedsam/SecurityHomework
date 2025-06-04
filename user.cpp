@@ -61,8 +61,8 @@ int main() {
         return -1;
     }
 
-    // Creating the handshake_1
-    Handshake_1 handshake;
+    // Creating handshake
+    Handshake handshake;
     // Generate nonce
     randombytes_buf(handshake.nonce, sizeof(handshake.nonce));
 
