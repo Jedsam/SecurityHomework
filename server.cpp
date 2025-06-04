@@ -3,10 +3,16 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sodium.h>
 
 #include "defines.hpp"
 
 int main() {
+    if (sodium_init() == -1) {
+        std::cerr << "Failed to initialize libsodium" << std::endl;
+        return 1;
+    }
+
     std::cout << std::format("The server is starting!") << std::endl;
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0); // IPv4, TCP
 
@@ -18,7 +24,10 @@ int main() {
     // make it listen to all the available IPs.
 
     // Bind to the address with the socket
-    bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
+    if(bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) == -1) {
+        std::cout << std::format("Error binding to server: {}", serverAddress.sin_addr.s_addr) << std::endl;
+        return -1;
+    }
 
     // Listen to the socket, 5 max trials
     listen(serverSocket, 5);
