@@ -1,14 +1,14 @@
 #include <cstring>
 #include <iostream>
-#include <format>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <sodium.h>
 
+#include <format>
 #include "defines.hpp"
-#include "user.h"
-#include "authority.h"
+#include "user.hpp"
+#include "authority.hpp"
 #include "Logger.hpp"
 
 int main() {

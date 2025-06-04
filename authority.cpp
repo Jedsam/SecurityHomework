@@ -9,7 +9,7 @@
 #include <format>
 
 #include "defines.hpp"
-#include "authority.h"
+#include "authority.hpp"
 #include "Logger.hpp"
 
 int main() {
