@@ -9,6 +9,7 @@
 #include "defines.hpp"
 #include "user.h"
 #include "authority.h"
+#include "Logger.hpp"
 
 int main() {
     if (sodium_init() == -1) {
@@ -16,6 +17,7 @@ int main() {
         return 1;
     }
 
+    Logger::Init("user_log.txt");
     // client identifier
     const char* identifier = "bobTheReal";
     uint16_t id_len = static_cast<uint16_t>(strlen(identifier));
@@ -58,21 +60,21 @@ int getDigitalSignature(int clientSocket, const char* identifier, uint16_t id_le
     // Send identifier length
     uint16_t id_len_net = htons(id_len);
     ssize_t r = send(clientSocket, &id_len_net, sizeof(id_len_net), 0);
-    std::cout << std::format("Expected {} sent actual {} sized message\n", sizeof(id_len_net), r);
+    Logger::Log(std::format("Expected {} sent actual {} sized message\n", sizeof(id_len_net), r));
 
     // Send identifier string
     r = send(clientSocket, identifier, id_len, 0);
-    std::cout << std::format("Expected {} sent actual {} sized message\n", id_len, r);
+    Logger::Log(std::format("Expected {} sent actual {} sized message\n", id_len, r));
 
     // send client public key
     r = send(clientSocket, user_pk, user_pk_size, 0);
-    std::cout << std::format("Expected {} sent actual {} sized message\n", user_pk_size, r);
+    Logger::Log(std::format("Expected {} sent actual {} sized message\n", user_pk_size, r));
     std::cout << std::format("The user sent the public key!\n");
 
 
     SignedResponse response;
     r = recv(clientSocket, &response, sizeof(response), MSG_WAITALL);
-    std::cout << std::format("Expected {} recieved actual {} sized message\n", sizeof(response), r);
+    Logger::Log(std::format("Expected {} recieved actual {} sized message\n", sizeof(response), r));
     if (r != sizeof(response)) {
         std::cerr << "Failed to receive signature response\n";
         close(clientSocket);
@@ -93,7 +95,7 @@ int getDigitalSignature(int clientSocket, const char* identifier, uint16_t id_le
 
     delete[] msg;
 
-    // closing socket
+// closing socket
     close(clientSocket);
     return 1;
 }

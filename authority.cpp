@@ -10,12 +10,15 @@
 
 #include "defines.hpp"
 #include "authority.h"
+#include "Logger.hpp"
 
 int main() {
     if (sodium_init() == -1) {
         std::cerr << "Failed to initialize libsodium" << std::endl;
         return 1;
     }
+
+    Logger::Init("authority_log.txt");
 
     // EdDSA keys setup
     unsigned char authority_pk[crypto_sign_PUBLICKEYBYTES];
@@ -58,7 +61,7 @@ int main() {
         // Receive identifier length first
         uint16_t id_len_net;
         ssize_t r = recv(clientSocket, &id_len_net, sizeof(id_len_net), MSG_WAITALL);
-        std::cout << std::format("Expected {} recieved actual {} sized message\n", sizeof(id_len_net), r);
+        Logger::Log(std::format("Expected {} recieved actual {} sized message\n", sizeof(id_len_net), r));
         if (r != sizeof(id_len_net)) {
             std::cerr << "Failed to receive identifier length\n";
             close(clientSocket);
@@ -75,7 +78,7 @@ int main() {
         // Receive identifier string
         char identifier[MAX_ID_LEN + 1] = {0};
         r = recv(clientSocket, identifier, id_len, MSG_WAITALL);
-        std::cout << std::format("Expected {} recieved actual {} sized message\n",id_len, r);
+        Logger::Log(std::format("Expected {} recieved actual {} sized message\n",id_len, r));
         if (r != id_len) {
             std::cerr << "Failed to receive identifier\n";
             close(clientSocket);
@@ -87,7 +90,7 @@ int main() {
         // Receive client's public key (X25519)
         unsigned char client_pk[crypto_kx_PUBLICKEYBYTES];
         r = recv(clientSocket, client_pk, sizeof(client_pk), MSG_WAITALL);
-        std::cout << std::format("Expected {} recieved actual {} sized message\n", sizeof(client_pk), r);
+        Logger::Log(std::format("Expected {} recieved actual {} sized message\n", sizeof(client_pk), r));
         if (r != sizeof(client_pk)) {
             std::cerr << "Failed to receive client public key\n";
             close(clientSocket);
@@ -109,7 +112,7 @@ int main() {
 
         // Send back the signature + signer's public key
         ssize_t sent = send(clientSocket, &response, sizeof(response), 0);
-        std::cout << std::format("Expected {} but sent {} sized message\n", sizeof(response), sent);
+        Logger::Log(std::format("Expected {} but sent {} sized message\n", sizeof(response), sent));
         if (sent != sizeof(response)) {
             std::cerr << "Failed to send signature response\n";
         } else {

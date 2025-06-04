@@ -6,6 +6,7 @@
 #include <sodium.h>
 
 #include "defines.hpp"
+#include "Logger.hpp"
 
 int main() {
     if (sodium_init() == -1) {
@@ -13,6 +14,7 @@ int main() {
         return 1;
     }
 
+    Logger::Init("server_log.txt");
     std::cout << std::format("The server is starting!") << std::endl;
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0); // IPv4, TCP
 

@@ -55,3 +55,6 @@ cmake_install.cmake
 user
 authority
 server
+
+# log files
+*_log.txt
