@@ -8,9 +8,10 @@
 #include <iostream>
 #include <format>
 
-#include "defines.hpp"
-#include "authority.hpp"
 #include "Logger.hpp"
+#include "defines.hpp"
+#include "connection.hpp"
+#include "authority.hpp"
 
 int main() {
     if (sodium_init() == -1) {
@@ -56,76 +57,10 @@ int main() {
 
     // Accepting connection request
     while (true) {
-        int clientSocket = accept(serverSocket, nullptr, nullptr);
-
-        // Receive identifier length first
-        uint16_t id_len_net;
-        ssize_t r = recv(clientSocket, &id_len_net, sizeof(id_len_net), MSG_WAITALL);
-        Logger::Log(std::format("Expected {} recieved actual {} sized message\n", sizeof(id_len_net), r));
-        if (r != sizeof(id_len_net)) {
-            std::cerr << "Failed to receive identifier length\n";
-            close(clientSocket);
-            continue;
-        }
-
-        uint16_t id_len = ntohs(id_len_net);
-        if (id_len == 0 || id_len > MAX_ID_LEN) {
-            std::cerr << "Invalid identifier length\n";
-            close(clientSocket);
-            continue;
-        }
-
-        // Receive identifier string
-        char identifier[MAX_ID_LEN + 1] = {0};
-        r = recv(clientSocket, identifier, id_len, MSG_WAITALL);
-        Logger::Log(std::format("Expected {} recieved actual {} sized message\n",id_len, r));
-        if (r != id_len) {
-            std::cerr << "Failed to receive identifier\n";
-            close(clientSocket);
-            continue;
-        }
-        identifier[id_len] = '\0';
-        std::cout << "Received ID: " << identifier << std::endl;
-
-        // Receive client's public key (X25519)
-        unsigned char client_pk[crypto_kx_PUBLICKEYBYTES];
-        r = recv(clientSocket, client_pk, sizeof(client_pk), MSG_WAITALL);
-        Logger::Log(std::format("Expected {} recieved actual {} sized message\n", sizeof(client_pk), r));
-        if (r != sizeof(client_pk)) {
-            std::cerr << "Failed to receive client public key\n";
-            close(clientSocket);
-            continue;
-        }
-
-
-        // Prepare message to sign = identifier + public key
-        size_t msg_len = id_len + sizeof(client_pk);
-        unsigned char* msg = new unsigned char[msg_len];
-        memcpy(msg, identifier, id_len);
-        memcpy(msg + id_len, client_pk, sizeof(client_pk));
-
-        // Sign message
-        SignedResponse response;
-        crypto_sign_detached(response.signature, nullptr, msg, msg_len, authority_sk);
-        memcpy(response.signer_pk, authority_pk, sizeof(authority_pk));
-
-
-        // Send back the signature + signer's public key
-        ssize_t sent = send(clientSocket, &response, sizeof(response), 0);
-        Logger::Log(std::format("Expected {} but sent {} sized message\n", sizeof(response), sent));
-        if (sent != sizeof(response)) {
-            std::cerr << "Failed to send signature response\n";
-        } else {
-            std::cout << "Sent signature to client\n";
-        }
-
-        delete[] msg;
-
-        close(clientSocket);
+        Authority::sendDigitalSignature(serverSocket, authority_pk, authority_sk, sizeof(authority_pk));
     }
 
-// closing the socket.
+    // closing the socket.
     close(serverSocket);
     return 0;
 }
-

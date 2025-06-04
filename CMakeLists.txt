@@ -7,14 +7,14 @@ pkg_check_modules(SODIUM REQUIRED libsodium)
 
 set(EXECUTABLES server user authority)
 
-set(SOURCES_SERVER server.h)
-set(SOURCES_USER user.h authority.h)
-set(SOURCES_AUTHORITY authority.h)
+set(sources_server)
+set(sources_user)
+set(sources_authority)
 
-set(HELPING_FUNCTIONS)
+set(HELPING_FUNCTIONS connection.cpp)
 
 foreach(executable ${EXECUTABLES})
-    add_executable(${executable} ${executable}.cpp ${SOURCES_${executable}} ${HELPING_FUNCTIONS})
+    add_executable(${executable} ${executable}.cpp ${executable}.hpp ${sources_${executable}} ${HELPING_FUNCTIONS})
     target_include_directories(${executable} PRIVATE ${SODIUM_INCLUDE_DIRS})
     target_link_libraries(${executable} PRIVATE ${SODIUM_LIBRARIES})
 endforeach()
