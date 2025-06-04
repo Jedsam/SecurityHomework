@@ -14,34 +14,30 @@
 int Authority::sendDigitalSignature(int serverSocket, unsigned char authority_pk[], unsigned char authority_sk[], size_t authority_pk_size) {
     int clientSocket = accept(serverSocket, nullptr, nullptr);
 
-    // Receive identifier string
-    char identifier[MAX_ID_LEN] = {0};
-    ssize_t r = recv(clientSocket, identifier, MAX_ID_LEN, MSG_WAITALL);
-    Logger::Log(std::format("Expected {} recieved actual {} sized message\n", MAX_ID_LEN, r));
-    if (r != MAX_ID_LEN) {
-        std::cerr << "Failed to receive identifier\n";
-        close(clientSocket);
-        return -1;
-    }
-    identifier[MAX_ID_LEN] = '\0';
-    std::cout << "Received ID: " << identifier << std::endl;
 
-    // Receive client's public key (X25519)
-    unsigned char client_pk[crypto_kx_PUBLICKEYBYTES];
-    r = recv(clientSocket, client_pk, sizeof(client_pk), MSG_WAITALL);
-    Logger::Log(std::format("Expected {} recieved actual {} sized message\n", sizeof(client_pk), r));
-    if (r != sizeof(client_pk)) {
-        std::cerr << "Failed to receive client public key\n";
+    SignRequest signRequest;
+    ssize_t r = recv(clientSocket, &signRequest, sizeof(signRequest), MSG_WAITALL);
+
+    Logger::Log(std::format("Expected {} received actual {} sized message\n", sizeof(signRequest), r));
+
+    if (r != sizeof(signRequest)) {
+        std::cerr << "Failed to receive complete SignRequest\n";
         close(clientSocket);
         return -1;
     }
+
+    // Null-terminate identifier safely
+    signRequest.identifier[MAX_ID_LEN - 1] = '\0';
+
+    std::cout << "Received ID: " << signRequest.identifier << std::endl;
+
 
 
     // Prepare message to sign = identifier + public key
-    size_t msg_len = MAX_ID_LEN + sizeof(client_pk);
+    size_t msg_len = MAX_ID_LEN + sizeof(signRequest.public_key);
     unsigned char* msg = new unsigned char[msg_len];
-    memcpy(msg, identifier, MAX_ID_LEN);
-    memcpy(msg + MAX_ID_LEN, client_pk, sizeof(client_pk));
+    memcpy(msg, signRequest.identifier, MAX_ID_LEN);
+    memcpy(msg + MAX_ID_LEN, signRequest.public_key, sizeof(signRequest.public_key));
 
     // Sign message
     SignedResponse response;
@@ -76,16 +72,18 @@ int Authority::getDigitalSignature(int clientSocket, const char* identifier, uns
     }
 
 
-    // Send identifier string
-    ssize_t r = send(clientSocket, identifier, MAX_ID_LEN, 0);
-    Logger::Log(std::format("Expected {} sent actual {} sized message\n", MAX_ID_LEN, r));
+    SignRequest signRequest;
+    // Copy identifier and public key into the struct
+    memcpy(signRequest.identifier, identifier, MAX_ID_LEN);
+    memcpy(signRequest.public_key, user_pk, user_pk_size);  // Assume user_pk_size ≤ MAX_PK_SIZE
 
-    // send client public key
-    r = send(clientSocket, user_pk, user_pk_size, 0);
-    Logger::Log(std::format("Expected {} sent actual {} sized message\n", user_pk_size, r));
-    std::cout << std::format("The user sent the public key!\n");
+    // Send the struct
+    ssize_t r = send(clientSocket, &signRequest, sizeof(signRequest), 0);
+    Logger::Log(std::format("Expected {} sent actual {} sized message\n", sizeof(signRequest), r));
+    std::cout << std::format("The user sent the identifier and public key!\n");
 
 
+    // Take the response of the user
     SignedResponse response;
     r = recv(clientSocket, &response, sizeof(response), MSG_WAITALL);
     Logger::Log(std::format("Expected {} recieved actual {} sized message\n", sizeof(response), r));

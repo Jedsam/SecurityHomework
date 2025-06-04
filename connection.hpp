@@ -2,7 +2,7 @@
 
 #include <sodium.h>
 #include <cstddef>
-#include <cstdint>
+#include "defines.hpp"
 
 class Authority {
 public:
@@ -11,6 +11,10 @@ public:
 };
 
 
+struct SignRequest {
+    unsigned char identifier[MAX_ID_LEN];
+    unsigned char public_key[crypto_sign_PUBLICKEYBYTES];
+};
 struct SignedResponse {
     unsigned char signature[crypto_sign_BYTES];
     unsigned char signer_pk[crypto_sign_PUBLICKEYBYTES];
