@@ -4,14 +4,188 @@
 #include <sodium.h>
 
 #include <cstring>
+#include <string>
 #include <iostream>
 #include <format>
+#include <vector>
 
 #include "defines.hpp"
 #include "Logger.hpp"
 #include "connection.hpp"
 
-int Authority::sendDigitalSignature(int serverSocket, unsigned char authority_pk[], unsigned char authority_sk[], size_t authority_pk_size) {
+Connect::Connect(const char *id) {
+    std::strncpy(identifier, id, MAX_ID_LEN - 1);
+    identifier[MAX_ID_LEN - 1] = '\0';
+    crypto_kx_keypair(public_key, secret_key);  // Create PK and SK pairs
+
+    // Print the public keys
+    std::string formatted_pk;
+    for (int i = 0; i < crypto_kx_PUBLICKEYBYTES; ++i) {
+        formatted_pk += std::format("{:02x}", public_key[i]);
+    }
+    std::cout << "Public Keys: " << formatted_pk << std::endl;
+}
+int Connect::generateServerSessionKeys() {
+    if (crypto_kx_server_session_keys(rx, tx, public_key, secret_key, handshake_target.public_key) != 0) {
+        close(cur_socket);
+        return -1;
+    }
+    return 0;
+}
+int Connect::sendMessage() {
+    // Message to send
+    std::string plaintext = "Hello Server";
+
+    HeaderMessage myMessageHeader;
+    myMessageHeader.messageType = TEXT;
+    myMessageHeader.bit_length = plaintext.size();
+
+    // Serialize header (ensure no padding!)
+    unsigned char header_bytes[sizeof(HeaderMessage)];
+    memcpy(header_bytes, &myMessageHeader, sizeof(HeaderMessage));
+
+    // Compute HMAC-SHA256 (manual HMAC using crypto_auth for simplicity)
+    unsigned char header_mac[crypto_auth_BYTES];
+    crypto_auth(header_mac, header_bytes, sizeof(HeaderMessage), mac_key_out);
+
+    // Combine header + MAC into one buffer
+    std::vector<unsigned char> message_with_mac;
+    message_with_mac.insert(message_with_mac.end(), header_bytes, header_bytes + sizeof(header_bytes));
+    message_with_mac.insert(message_with_mac.end(), header_mac, header_mac + crypto_auth_BYTES);
+
+    // Reserve space for ciphertext: MAC (16 bytes) + message_with_mac
+    std::vector<unsigned char> ciphertext(message_with_mac.size() + crypto_secretbox_MACBYTES);
+
+    crypto_secretbox_easy(ciphertext.data(), message_with_mac.data(), message_with_mac.size(), iv, tx);
+
+    ssize_t sent = send(cur_socket, ciphertext.data(), ciphertext.size(), 0);
+    if (sent != (ssize_t)ciphertext.size()) {
+        std::cerr << "Failed to send encrypted message.\n";
+        close(cur_socket);
+        return -1;
+    }
+    std::cout << "Sending ciphertext size: " << ciphertext.size() << std::endl;
+    std::cout << "Encrypted message sent successfully.\n";
+    return 0;
+}
+int Connect::recieveMessage() {
+    // Receive ciphertext
+    std::vector<unsigned char> ciphertext(sizeof(HeaderMessage) + crypto_auth_BYTES + crypto_secretbox_MACBYTES);
+
+    ssize_t r = recv(cur_socket, ciphertext.data(), ciphertext.size(), MSG_WAITALL);
+    if (r != (ssize_t)ciphertext.size()) {
+        std::cerr << "Failed to receive full ciphertext\n";
+        close(cur_socket);
+        return -1;
+    }
+
+    // Decrypt
+    std::vector<unsigned char> decrypted(ciphertext.size() - crypto_secretbox_MACBYTES);
+    if (crypto_secretbox_open_easy(decrypted.data(), ciphertext.data(), ciphertext.size(), iv, rx) != 0) {
+        std::cerr << "Decryption failed: tampered or corrupted data.\n";
+        close(cur_socket);
+        return -1;
+    }
+
+    // Extract message and MAC
+    if (decrypted.size() < crypto_auth_BYTES) {
+        std::cerr << "Decrypted message too short.\n";
+        return -1;
+    }
+
+    size_t plaintext_len = decrypted.size() - crypto_auth_BYTES;
+    std::string plaintext(reinterpret_cast<char*>(decrypted.data()), plaintext_len);
+    unsigned char received_mac[crypto_auth_BYTES];
+    std::memcpy(received_mac, decrypted.data() + plaintext_len, crypto_auth_BYTES);
+
+    // Verify MAC
+    if (crypto_auth_verify(received_mac, decrypted.data(), plaintext_len, mac_key_in) != 0) {
+        std::cerr << "MAC verification failed: message integrity compromised.\n";
+        return -1;
+    }
+    std::cout << "Received secure message: " << plaintext << "\n";
+    return 0;
+}
+int Connect::generateCommunicationKeys() {
+    // Message counter
+    message_counter = 1;
+
+    // Create per-message nonce
+    unsigned char nonce_input[2 * crypto_secretbox_NONCEBYTES + sizeof(message_counter)];
+
+    // Mixing up the nonces
+    if (handshake_initiator.nonce[0] > handshake_target.nonce[0]) {
+        std::memcpy(nonce_input, handshake_initiator.nonce, crypto_secretbox_NONCEBYTES);
+        std::memcpy(nonce_input + crypto_secretbox_NONCEBYTES, handshake_target.nonce, crypto_secretbox_NONCEBYTES);
+    } else {
+        std::memcpy(nonce_input, handshake_target.nonce, crypto_secretbox_NONCEBYTES);
+        std::memcpy(nonce_input + crypto_secretbox_NONCEBYTES,  handshake_initiator.nonce, crypto_secretbox_NONCEBYTES);
+    }
+    std::memcpy(nonce_input + 2 * crypto_secretbox_NONCEBYTES, &message_counter, sizeof(message_counter));
+
+    crypto_generichash(iv, sizeof(iv), nonce_input, sizeof(nonce_input), nullptr, 0);
+    std::string formatted_iv;
+    for (int i = 0; i < crypto_secretbox_NONCEBYTES; ++i) {
+        formatted_iv += std::format("{:02x}", iv[i]);
+    }
+    std::cout << "IV nonce: " << formatted_iv << std::endl;
+
+    // Derive MAC keys
+    crypto_generichash(mac_key_in, sizeof(mac_key_in), rx, sizeof(rx), nullptr, 0);
+    crypto_generichash(mac_key_out, sizeof(mac_key_out), tx, sizeof(tx), nullptr, 0);
+    return 0;
+}
+int Connect::generateClientSessionKeys() {
+    if (crypto_kx_client_session_keys(rx, tx, public_key, secret_key, handshake_target.public_key) != 0) {
+        close(cur_socket);
+        return -1;
+    }
+    return 0;
+}
+void Connect::generateNonce() {
+    // Generate nonce
+    randombytes_buf(handshake_initiator.nonce, sizeof(handshake_initiator.nonce));
+    std::string formatted_nonce;
+    for (int i = 0; i < crypto_kx_PUBLICKEYBYTES; ++i) {
+        formatted_nonce += std::format("{:02x}", handshake_initiator.nonce[i]);
+    }
+    std::cout << "Nonce: " << formatted_nonce << std::endl;
+}
+int Connect::sendHandshake() {
+    std::memcpy(handshake_initiator.signature, signed_response.signature, sizeof(handshake_initiator.signature));
+    std::memcpy(handshake_initiator.identifier, identifier, sizeof(identifier));
+    std::memcpy(handshake_initiator.public_key, public_key, sizeof(public_key));
+
+    // Send the handshake
+    ssize_t r = send(cur_socket, &handshake_initiator, sizeof(handshake_initiator), 0);
+    if (r != sizeof(handshake_initiator)) {
+        std::cerr << "Failed to send handshake\n";
+        close(cur_socket);
+        return -1;
+    }
+    return 0;
+}
+int Connect::recieveHandshake() {
+    ssize_t r = recv(cur_socket, &handshake_target, sizeof(handshake_target), MSG_WAITALL);
+    if (r != sizeof(handshake_target)) {
+        std::cerr << "Failed to receive signature response\n";
+        close(cur_socket);
+        return -1;
+    }
+
+    unsigned char msg[MAX_ID_LEN + crypto_kx_PUBLICKEYBYTES];
+    std::memcpy(msg, handshake_target.identifier, MAX_ID_LEN);
+    std::memcpy(msg + MAX_ID_LEN, handshake_target.public_key, crypto_kx_PUBLICKEYBYTES);
+
+    if (crypto_sign_verify_detached(handshake_target.signature, msg, sizeof(msg), signed_response.signer_pk) == 0) {
+        std::cout << "User is verified: CA signed their identity + public key.\n";
+    } else {
+        std::cerr << "Invalid user: signature not trusted by the Authority.\n";
+        return -1;
+    }
+    return 0;
+}
+int Connect::sendDigitalSignature(int serverSocket, unsigned char authority_pk[], unsigned char authority_sk[], size_t authority_pk_size) {
     int clientSocket = accept(serverSocket, nullptr, nullptr);
 
     SignRequest signRequest;
@@ -38,16 +212,14 @@ int Authority::sendDigitalSignature(int serverSocket, unsigned char authority_pk
     memcpy(msg, signRequest.identifier, MAX_ID_LEN);
     memcpy(msg + MAX_ID_LEN, signRequest.public_key, sizeof(signRequest.public_key));
 
-    // Sign message
-    SignedResponse response;
-    crypto_sign_detached(response.signature, nullptr, msg, msg_len, authority_sk);
-    memcpy(response.signer_pk, authority_pk, authority_pk_size);
+    crypto_sign_detached(signed_response.signature, nullptr, msg, msg_len, authority_sk);
+    memcpy(signed_response.signer_pk, authority_pk, authority_pk_size);
 
 
     // Send back the signature + signer's public key
-    ssize_t sent = send(clientSocket, &response, sizeof(response), 0);
-    Logger::Log(std::format("Expected {} but sent {} sized message\n", sizeof(response), sent));
-    if (sent != sizeof(response)) {
+    ssize_t sent = send(clientSocket, &signed_response, sizeof(signed_response), 0);
+    Logger::Log(std::format("Expected {} but sent {} sized message\n", sizeof(signed_response), sent));
+    if (sent != sizeof(signed_response)) {
         std::cerr << "Failed to send signature response\n";
     } else {
         std::cout << "Sent signature to client\n";
@@ -56,7 +228,7 @@ int Authority::sendDigitalSignature(int serverSocket, unsigned char authority_pk
     close(clientSocket);
     return 0;
 }
-std::optional<SignedResponse>  Authority::getDigitalSignature(const char* identifier, unsigned char user_pk[], size_t user_pk_size) {
+int Connect::getDigitalSignature() {
     // creating socket
     int clientSocket = socket(AF_INET, SOCK_STREAM, 0);
     // specifying address
@@ -68,39 +240,42 @@ std::optional<SignedResponse>  Authority::getDigitalSignature(const char* identi
     // sending connection request
     if (connect(clientSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) == -1) {
         std::cout << std::format("Error connecting to CA: {}", serverAddress.sin_addr.s_addr) << std::endl;
-        return std::nullopt;
+        return -1;
     }
-
 
     SignRequest signRequest;
     // Copy identifier and public key into the struct
     memcpy(signRequest.identifier, identifier, MAX_ID_LEN);
-    memcpy(signRequest.public_key, user_pk, user_pk_size);  // Assume user_pk_size ≤ MAX_PK_SIZE
+    memcpy(signRequest.public_key, public_key, sizeof(public_key));  // Assume user_pk_size ≤ MAX_PK_SIZE
 
     // Send the struct
     ssize_t r = send(clientSocket, &signRequest, sizeof(signRequest), 0);
     if (r != sizeof(signRequest)) {
         std::cerr << "Failed to receive signature response\n";
         close(clientSocket);
-        return std::nullopt;
+        return -1;
     }
     Logger::Log(std::format("Expected {} sent actual {} sized message\n", sizeof(signRequest), r));
-    std::cout << std::format("The user sent the identifier and public key!\n");
+    std::cout << std::format("Sent the identifier and public key!\n");
 
 
-    // Take the response of the user
-    SignedResponse response;
-    r = recv(clientSocket, &response, sizeof(response), MSG_WAITALL);
-    Logger::Log(std::format("Expected {} recieved actual {} sized message\n", sizeof(response), r));
-    if (r != sizeof(response)) {
+    r = recv(clientSocket, &signed_response, sizeof(signed_response), MSG_WAITALL);
+    Logger::Log(std::format("Expected {} recieved actual {} sized message\n", sizeof(signed_response), r));
+    if (r != sizeof(signed_response)) {
         std::cerr << "Failed to receive signature response\n";
         close(clientSocket);
-        return std::nullopt;
+        return -1;
     }
 
 
 
     // closing socket
     close(clientSocket);
-    return response;
+    return 0;
+}
+void Connect::setSocket(int socket) {
+    this->cur_socket = socket;
+}
+void Connect::closeSocket() {
+    close(cur_socket);
 }

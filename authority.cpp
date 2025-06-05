@@ -33,7 +33,7 @@ int main() {
     for (int i = 0; i < crypto_kx_PUBLICKEYBYTES; ++i) {
         formatted_pk += std::format("{:02x}", authority_pk[i]);
     }
-    std::cout << "Public Keys: " << formatted_pk << std::endl;
+    std::cout << "Sign public Keys: " << formatted_pk << std::endl;
 
     // creating socket
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);  // IPv4, TCP
@@ -55,9 +55,10 @@ int main() {
     listen(serverSocket, 5);
 
 
+    Connect myConnection("AuthServer");
     // Accepting connection request
     while (true) {
-        Authority::sendDigitalSignature(serverSocket, authority_pk, authority_sk, sizeof(authority_pk));
+        myConnection.sendDigitalSignature(serverSocket, authority_pk, authority_sk, sizeof(authority_pk));
     }
 
     // closing the socket.
