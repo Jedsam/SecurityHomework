@@ -123,11 +123,11 @@ int main() {
 
     // Hash the nonce_input to generate a secure per-message nonce
     crypto_generichash(iv, sizeof(iv), nonce_input, sizeof(nonce_input), nullptr, 0);
-    std::cout << "IV nonce: ";
-    for (size_t i = 0; i < sizeof(iv); i++) {
-        printf("%02x", iv[i]);
+    std::string formatted_iv;
+    for (int i = 0; i < crypto_kx_PUBLICKEYBYTES; ++i) {
+        formatted_iv += std::format("{:02x}", iv[i]);
     }
-    std::cout << std::endl;
+    std::cout << "IV nonce: " << formatted_iv << std::endl;
 
     // Calculate MAC and IV
     unsigned char mac_key_in[crypto_auth_KEYBYTES];
