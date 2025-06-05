@@ -7,6 +7,7 @@
 #include <cstring>
 #include <iostream>
 #include <format>
+#include <vector>
 
 #include "Logger.hpp"
 #include "defines.hpp"
@@ -101,7 +102,66 @@ int main() {
     }
 
 
+    // Calculate symmetric keys
+    unsigned char rx[crypto_kx_SESSIONKEYBYTES];  // key for receiving data
+    unsigned char tx[crypto_kx_SESSIONKEYBYTES];  // key for sending data
 
+    if (crypto_kx_client_session_keys(rx, tx, user_pk, user_sk, handshake_server.public_key) != 0) {
+        std::cerr << "Failed to derive shared session keys\n";
+        close(clientSocket);
+        return -1;
+    }
+
+    unsigned char iv[crypto_secretbox_NONCEBYTES];  // 24 bytes
+    uint64_t message_counter = 1;  // Increment for every new message
+
+    // Combine both nonces + counter into a single buffer
+    unsigned char nonce_input[2 * crypto_secretbox_NONCEBYTES + sizeof(message_counter)];
+    std::memcpy(nonce_input, handshake_user.nonce, crypto_secretbox_NONCEBYTES);
+    std::memcpy(nonce_input + crypto_secretbox_NONCEBYTES, handshake_server.nonce, crypto_secretbox_NONCEBYTES);
+    std::memcpy(nonce_input + 2 * crypto_secretbox_NONCEBYTES, &message_counter, sizeof(message_counter));
+
+    // Hash the nonce_input to generate a secure per-message nonce
+    crypto_generichash(iv, sizeof(iv), nonce_input, sizeof(nonce_input), nullptr, 0);
+    std::cout << "IV nonce: ";
+    for (size_t i = 0; i < sizeof(iv); i++) {
+        printf("%02x", iv[i]);
+    }
+    std::cout << std::endl;
+
+    // Calculate MAC and IV
+    unsigned char mac_key_in[crypto_auth_KEYBYTES];
+    unsigned char mac_key_out[crypto_auth_KEYBYTES];
+
+    crypto_generichash(mac_key_in, sizeof(mac_key_in), rx, sizeof(rx), nullptr, 0);
+    crypto_generichash(mac_key_out, sizeof(mac_key_out), tx, sizeof(tx), nullptr, 0);
+
+    // Message to send
+    std::string plaintext = "Hello Server";
+
+    // Compute HMAC-SHA256 (manual HMAC using crypto_auth for simplicity)
+    unsigned char mac[crypto_auth_BYTES];
+    crypto_auth(mac, reinterpret_cast<const unsigned char*>(plaintext.c_str()), plaintext.size(), mac_key_out);
+
+    // Combine plaintext and MAC into one message
+    std::vector<unsigned char> message_with_mac(plaintext.begin(), plaintext.end());
+    message_with_mac.insert(message_with_mac.end(), mac, mac + crypto_auth_BYTES);
+
+    // Reserve space for ciphertext: MAC (16 bytes) + message_with_mac
+    std::vector<unsigned char> ciphertext(message_with_mac.size() + crypto_secretbox_MACBYTES);
+
+    crypto_secretbox_easy(ciphertext.data(), message_with_mac.data(), message_with_mac.size(), iv, tx);
+
+    ssize_t sent = send(clientSocket, ciphertext.data(), ciphertext.size(), 0);
+    if (sent != (ssize_t)ciphertext.size()) {
+        std::cerr << "Failed to send encrypted message.\n";
+        close(clientSocket);
+        return -1;
+    }
+    std::cout << "Sending ciphertext size: " << ciphertext.size() << std::endl;
+
+
+    std::cout << "Encrypted message sent successfully.\n";
 
     return 0;
 }

@@ -7,6 +7,7 @@
 #include <string>
 #include <format>
 #include <iostream>
+#include <vector>
 
 #include "defines.hpp"
 #include "Logger.hpp"
@@ -93,6 +94,80 @@ int main() {
             close(clientSocket);
             return -1;
         }
+
+        // Session key derivation
+        unsigned char rx[crypto_kx_SESSIONKEYBYTES];  // key for receiving
+        unsigned char tx[crypto_kx_SESSIONKEYBYTES];  // key for sending
+
+        if (crypto_kx_server_session_keys(rx, tx, server_pk, server_sk, handshake_user.public_key) != 0) {
+            std::cerr << "Failed to derive shared session keys\n";
+            close(clientSocket);
+            return -1;
+        }
+
+        // Message counter
+        uint64_t message_counter = 1;
+
+        // Create per-message nonce
+        unsigned char iv[crypto_secretbox_NONCEBYTES];
+        unsigned char nonce_input[2 * crypto_secretbox_NONCEBYTES + sizeof(message_counter)];
+        std::memcpy(nonce_input, handshake_user.nonce, crypto_secretbox_NONCEBYTES);
+        std::memcpy(nonce_input + crypto_secretbox_NONCEBYTES, handshake_server.nonce, crypto_secretbox_NONCEBYTES);
+        std::memcpy(nonce_input + 2 * crypto_secretbox_NONCEBYTES, &message_counter, sizeof(message_counter));
+
+        crypto_generichash(iv, sizeof(iv), nonce_input, sizeof(nonce_input), nullptr, 0);
+        std::cout << "IV nonce: ";
+        for (size_t i = 0; i < sizeof(iv); i++) {
+            printf("%02x", iv[i]);
+        }
+        std::cout << std::endl;
+
+        // Derive MAC keys
+        unsigned char mac_key_in[crypto_auth_KEYBYTES];
+        unsigned char mac_key_out[crypto_auth_KEYBYTES];
+        crypto_generichash(mac_key_in, sizeof(mac_key_in), rx, sizeof(rx), nullptr, 0);
+        crypto_generichash(mac_key_out, sizeof(mac_key_out), tx, sizeof(tx), nullptr, 0);
+
+        // Receive ciphertext
+        const size_t ciphertext_len_expected = std::string("Hello Server").size() + crypto_auth_BYTES + crypto_secretbox_MACBYTES;
+        std::vector<unsigned char> ciphertext(ciphertext_len_expected);
+
+        r = recv(clientSocket, ciphertext.data(), ciphertext.size(), MSG_WAITALL);
+        if (r != (ssize_t)ciphertext.size()) {
+            std::cerr << "Failed to receive full ciphertext\n";
+            close(clientSocket);
+            continue;
+        }
+
+        // Decrypt
+        std::vector<unsigned char> decrypted(ciphertext.size() - crypto_secretbox_MACBYTES);
+        if (crypto_secretbox_open_easy(decrypted.data(), ciphertext.data(), ciphertext.size(), iv, rx) != 0) {
+            std::cerr << "Decryption failed: tampered or corrupted data.\n";
+            close(clientSocket);
+            continue;
+        }
+
+        // Extract message and MAC
+        if (decrypted.size() < crypto_auth_BYTES) {
+            std::cerr << "Decrypted message too short.\n";
+            continue;
+        }
+
+        size_t plaintext_len = decrypted.size() - crypto_auth_BYTES;
+        std::string plaintext(reinterpret_cast<char*>(decrypted.data()), plaintext_len);
+        unsigned char received_mac[crypto_auth_BYTES];
+        std::memcpy(received_mac, decrypted.data() + plaintext_len, crypto_auth_BYTES);
+
+        // Verify MAC
+        if (crypto_auth_verify(received_mac,
+                               decrypted.data(),
+                               plaintext_len,
+                               mac_key_in) != 0) {
+            std::cerr << "MAC verification failed: message integrity compromised.\n";
+            continue;
+        }
+
+        std::cout << "Received secure message: " << plaintext << "\n";
 
         close(clientSocket);
     }
