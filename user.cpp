@@ -64,7 +64,9 @@ int main() {
         return -1;
     }
 
-    if (myConnect.sendMessage()) {
+
+    std::string plaintext = "Hello Server";
+    if (myConnect.sendTextMessage(plaintext, plaintext.size())) {
         std::cerr << "Failed to receive message\n";
         return -1;
     }

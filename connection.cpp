@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -32,25 +33,37 @@ int Connect::generateServerSessionKeys() {
     }
     return 0;
 }
-int Connect::sendMessage() {
-    // Message to send
-    std::string plaintext = "Hello Server";
-
+int Connect::sendTextMessage(const std::string& message, int size) {
     HeaderMessage myMessageHeader;
     myMessageHeader.messageType = TEXT;
-    myMessageHeader.bit_length = plaintext.size();
+    myMessageHeader.bit_length = size;
 
     // Serialize header (ensure no padding!)
-    unsigned char header_bytes[sizeof(HeaderMessage)];
-    memcpy(header_bytes, &myMessageHeader, sizeof(HeaderMessage));
+    int message_size = sizeof(HeaderMessage);
+    unsigned char message_text[sizeof(HeaderMessage)];
+    memcpy(message_text, &myMessageHeader, message_size);
 
+    if (sendEncryptedMessage(message_text, message_size)) {
+        std::cerr << "Failed to send encrypted header message.\n";
+        return -1;
+    }
+
+    const unsigned char* data = reinterpret_cast<const unsigned char*>(message.data());
+    if (sendEncryptedMessage(data, size)) {
+        std::cerr << "Failed to send encrypted text message.\n";
+        return -1;
+    }
+
+    return 0;
+}
+int Connect::sendEncryptedMessage(const unsigned char* header_bytes, int header_size) {
     // Compute HMAC-SHA256 (manual HMAC using crypto_auth for simplicity)
     unsigned char header_mac[crypto_auth_BYTES];
-    crypto_auth(header_mac, header_bytes, sizeof(HeaderMessage), mac_key_out);
+    crypto_auth(header_mac, header_bytes, header_size, mac_key_out);
 
     // Combine header + MAC into one buffer
     std::vector<unsigned char> message_with_mac;
-    message_with_mac.insert(message_with_mac.end(), header_bytes, header_bytes + sizeof(header_bytes));
+    message_with_mac.insert(message_with_mac.end(), header_bytes, header_bytes + header_size);
     message_with_mac.insert(message_with_mac.end(), header_mac, header_mac + crypto_auth_BYTES);
 
     // Reserve space for ciphertext: MAC (16 bytes) + message_with_mac
@@ -66,6 +79,8 @@ int Connect::sendMessage() {
     }
     std::cout << "Sending ciphertext size: " << ciphertext.size() << std::endl;
     std::cout << "Encrypted message sent successfully.\n";
+    message_counter++;
+    generateNonce();
     return 0;
 }
 int Connect::recieveMessage() {
@@ -79,33 +94,56 @@ int Connect::recieveMessage() {
         return -1;
     }
 
+    std::vector<unsigned char> plaintext = decryptRecievedMessage(ciphertext);
+    HeaderMessage myMessageHeader;
+    memcpy(&myMessageHeader, plaintext.data(), sizeof(HeaderMessage));
+    if (myMessageHeader.messageType == TEXT) {
+        ciphertext.resize(myMessageHeader.bit_length + crypto_auth_BYTES + crypto_secretbox_MACBYTES);
+        r = recv(cur_socket, ciphertext.data(), ciphertext.size(), MSG_WAITALL);
+        if (r != (ssize_t)ciphertext.size()) {
+            std::cerr << "Failed to receive full ciphertext\n";
+            close(cur_socket);
+            return -1;
+        }
+        std::vector<unsigned char> plaintext = decryptRecievedMessage(ciphertext);
+        std::cout << "Plaintext: ";
+        for (unsigned char c : plaintext) {
+            std::cout << c;
+        }
+        std::cout << std::endl;
+    }
+    return 0;
+}
+std::vector<unsigned char> Connect::decryptRecievedMessage(std::vector<unsigned char> ciphertext) {
     // Decrypt
     std::vector<unsigned char> decrypted(ciphertext.size() - crypto_secretbox_MACBYTES);
     if (crypto_secretbox_open_easy(decrypted.data(), ciphertext.data(), ciphertext.size(), iv, rx) != 0) {
         std::cerr << "Decryption failed: tampered or corrupted data.\n";
         close(cur_socket);
-        return -1;
+        return {};
     }
 
     // Extract message and MAC
     if (decrypted.size() < crypto_auth_BYTES) {
         std::cerr << "Decrypted message too short.\n";
-        return -1;
+        return {};
     }
 
     size_t plaintext_len = decrypted.size() - crypto_auth_BYTES;
-    std::string plaintext(reinterpret_cast<char*>(decrypted.data()), plaintext_len);
+    std::vector<unsigned char> plaintext(decrypted.begin(), decrypted.begin() + plaintext_len);
     unsigned char received_mac[crypto_auth_BYTES];
     std::memcpy(received_mac, decrypted.data() + plaintext_len, crypto_auth_BYTES);
 
     // Verify MAC
     if (crypto_auth_verify(received_mac, decrypted.data(), plaintext_len, mac_key_in) != 0) {
         std::cerr << "MAC verification failed: message integrity compromised.\n";
-        return -1;
+        return {};
     }
-    std::cout << "Received secure message: " << plaintext << "\n";
-    return 0;
+    message_counter++;
+    generateNonce();
+    return plaintext;
 }
+
 int Connect::generateCommunicationKeys() {
     // Message counter
     message_counter = 1;

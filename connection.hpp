@@ -3,8 +3,9 @@
 #include <sodium.h>
 
 #include <cstring>
-#include <optional>
 #include <cstddef>
+#include <string>
+#include <vector>
 
 #include "defines.hpp"
 
@@ -34,7 +35,9 @@ public:
     int sendDigitalSignature(int serverSocket, unsigned char authority_pk[], unsigned char authority_sk[], size_t authority_pk_size);
     int recieveHandshake();
     int recieveMessage();
-    int sendMessage();
+    std::vector<unsigned char> decryptRecievedMessage(std::vector<unsigned char> ciphertext);
+    int sendTextMessage(const std::string& message, int size);
+    int sendEncryptedMessage(const unsigned char* message, int size);
     int sendHandshake();
     int generateServerSessionKeys();
     int generateClientSessionKeys();
