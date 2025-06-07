@@ -1,9 +1,9 @@
-#include <cstddef>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <sodium.h>
 
+#include <cstddef>
 #include <cstring>
 #include <string>
 #include <iostream>
@@ -222,7 +222,7 @@ int Connect::receiveMessage() {
         if (r != (ssize_t)ciphertext.size()) {
             std::cerr << "Failed to receive full ciphertext\n";
         }
-        std::vector<unsigned char> plaintext = decryptReceivedMessage(ciphertext);
+        plaintext = decryptReceivedMessage(ciphertext);
         std::cout << "Plaintext: ";
         for (unsigned char c : plaintext) {
             std::cout << c;
@@ -243,7 +243,7 @@ int Connect::receiveMessage() {
             return -1;
         }
 
-        std::vector<unsigned char> plaintext = decryptReceivedMessage(ciphertext);
+        plaintext = decryptReceivedMessage(ciphertext);
         if (plaintext.empty()) {
             std::cerr << "Decryption failed for image data.\n";
             return -1;
@@ -264,8 +264,11 @@ int Connect::receiveMessage() {
         if (sendACK(plaintext.data(), plaintext.size(), IMAGE)) {
             std::cerr << "Failed to send ACK for image\n";
             return -1;
+        } else {
+            std::cout << "Incorrect header, closing the socket";
+            closeSocket();
+            return 1;
         }
-
     }
     return 0;
 }

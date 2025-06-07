@@ -93,6 +93,7 @@ int main() {
             }
 
         } else if (decision == 3) {
+            myConnect.closeSocket();
         }
     }
     return 0;
