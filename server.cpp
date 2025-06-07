@@ -50,6 +50,7 @@ int main() {
     // Listen to the socket, 5 max trials
     listen(serverSocket, 5);
 
+    int stopConnection, counter;
     // Accepting connection request
     while (true) {
         myConnect.setSocket(accept(serverSocket, nullptr, nullptr));
@@ -72,9 +73,18 @@ int main() {
             return -1;
         }
 
-        if (myConnect.recieveMessage()) {
-            std::cerr << "Failed to receive message\n";
-            return -1;
+        counter = 0;
+        stopConnection = myConnect.recieveMessage();
+        while(!stopConnection) {
+            stopConnection = myConnect.recieveMessage();
+            if (stopConnection == -1) {
+                std::cerr << "Failed to receive message\n";
+                counter++;
+                if (counter > 5)
+                    stopConnection = true;
+                else
+                    stopConnection = 0;
+            }
         }
         myConnect.closeSocket();
     }

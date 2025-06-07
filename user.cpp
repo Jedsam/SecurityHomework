@@ -65,10 +65,30 @@ int main() {
     }
 
 
-    std::string plaintext = "Hello Server";
-    if (myConnect.sendTextMessage(plaintext, plaintext.size())) {
-        std::cerr << "Failed to receive message\n";
-        return -1;
+    int decision = 0;
+    std::string plaintext;
+    while (decision != 3) {
+        std::cout << "Choose an option:\n"
+                  << "1-) Send a text message\n"
+                  << "2-) Send a file\n"
+                  << "3-) Close connection\n";
+        std::cin >> decision;
+
+        // Clear the newline left by std::cin >> decision
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+        if (decision == 1) {
+            std::cout << "Enter a text message : \n";
+            std::getline(std::cin, plaintext);
+            if (myConnect.sendTextMessage(plaintext, plaintext.size())) {
+                std::cerr << "Failed to receive message\n";
+                return -1;
+            }
+        } else if (decision == 2) {
+            std::getline(std::cin, plaintext);
+
+        } else if (decision == 3) {
+        }
     }
     return 0;
 }
