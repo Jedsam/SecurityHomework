@@ -54,9 +54,9 @@ int main() {
     // Accepting connection request
     while (true) {
         myConnect.setSocket(accept(serverSocket, nullptr, nullptr));
-        // Recieve the handshake from user
-        if (myConnect.recieveHandshake()) {
-            std::cerr << "Failed to recieve handshake\n";
+        // Receive the handshake from user
+        if (myConnect.receiveHandshake()) {
+            std::cerr << "Failed to receive handshake\n";
             return -1;
         }
         myConnect.generateNonce();
@@ -74,9 +74,9 @@ int main() {
         }
 
         counter = 0;
-        stopConnection = myConnect.recieveMessage();
+        stopConnection = myConnect.receiveMessage();
         while(!stopConnection) {
-            stopConnection = myConnect.recieveMessage();
+            stopConnection = myConnect.receiveMessage();
             if (stopConnection == -1) {
                 std::cerr << "Failed to receive message\n";
                 counter++;

@@ -47,10 +47,18 @@ int Connect::sendTextMessage(const std::string& message, int size) {
         std::cerr << "Failed to send encrypted header message.\n";
         return -1;
     }
+    if (receiveACK(message_text, message_size, HEADER)) {
+        std::cout << "Failed to receive ACK\n";
+        return -1;
+    }
 
     const unsigned char* data = reinterpret_cast<const unsigned char*>(message.data());
     if (sendEncryptedMessage(data, size)) {
         std::cerr << "Failed to send encrypted text message.\n";
+        return -1;
+    }
+    if (receiveACK(data, size, TEXT)) {
+        std::cout << "Failed to receive ACK\n";
         return -1;
     }
 
@@ -79,11 +87,78 @@ int Connect::sendEncryptedMessage(const unsigned char* header_bytes, int header_
     }
     std::cout << "Sending ciphertext size: " << ciphertext.size() << std::endl;
     std::cout << "Encrypted message sent successfully.\n";
+    return 0;
+}
+int Connect::sendACK(const unsigned char* header_bytes, int header_size, char header_type) {
+    Acknowledgment myAcknowledgment;
+    myAcknowledgment.messageType = header_type;
+    myAcknowledgment.bit_length = header_size;
+    myAcknowledgment.checksum = calculateCheckSum(header_bytes, header_size);
+
+    // Convert the variable to sendable data
+    int message_size = sizeof(Acknowledgment);
+    unsigned char message_text[sizeof(Acknowledgment)];
+    memcpy(message_text, &myAcknowledgment, message_size);
+
+    if (sendEncryptedMessage(message_text, message_size)) {
+        std::cerr << "Failed to send encrypted header message.\n";
+        return -1;
+    }
+    return 0;
+}
+int Connect::receiveACK(const unsigned char* header_bytes, int header_size, char header_type) {
+    std::vector<unsigned char> ciphertext(sizeof(Acknowledgment) + crypto_auth_BYTES + crypto_secretbox_MACBYTES);
+
+    ssize_t r = recv(cur_socket, ciphertext.data(), ciphertext.size(), MSG_WAITALL);
+    if (r != (ssize_t)ciphertext.size()) {
+        std::cerr << "Failed to receive full ACK ciphertext\n";
+        close(cur_socket);
+        return -1;
+    }
+
+    std::vector<unsigned char> plaintext = decryptReceivedMessage(ciphertext);
+
+    Acknowledgment myMessageHeader;
+    memcpy(&myMessageHeader, plaintext.data(), sizeof(Acknowledgment));
+    int checksum;
+    // ACK checks
+    if (myMessageHeader.messageType != header_type) {
+        std::cerr << std::format("Incorrect message type(expected {} but got {}), failed to verify the ACK\n", myMessageHeader.messageType, header_type);
+        close(cur_socket);
+        return -1;
+    } else if (myMessageHeader.bit_length != header_size) {
+        std::cerr << std::format("Incorrect message size(expected {} but got {}), failed to verify the ACK\n", myMessageHeader.bit_length, header_size);
+        close(cur_socket);
+        return -1;
+    } else if (myMessageHeader.checksum != (checksum = calculateCheckSum(header_bytes, header_size))) {
+        std::cerr << std::format("Incorrect checksum(expected {} but got {}), failed to verify the ACK\n", myMessageHeader.checksum, checksum);
+        close(cur_socket);
+        return -1;
+    }
     message_counter++;
     generateNonce();
     return 0;
 }
-int Connect::recieveMessage() {
+int Connect::calculateCheckSum(const unsigned char* header_bytes, int header_size) {
+    const size_t HASH_LEN = 4;
+    unsigned char hash[HASH_LEN];
+
+    std::cout << "Hash Data (hex): ";
+    for (int i = 0; i < header_size; ++i) {
+        printf("%02X ", header_bytes[i]);  // or use std::hex for C++ style
+    }
+    std::cout << std::endl;
+
+    crypto_generichash(hash, HASH_LEN, header_bytes, header_size, nullptr, 0);
+
+    // Convert 4-byte hash to a uint32_t
+    uint32_t checksum;
+    std::memcpy(&checksum, hash, sizeof(checksum));
+
+    std::cout << "Checksum (uint32_t): " << checksum << std::endl;
+    return checksum;
+}
+int Connect::receiveMessage() {
     // Receive ciphertext
     std::vector<unsigned char> ciphertext(sizeof(HeaderMessage) + crypto_auth_BYTES + crypto_secretbox_MACBYTES);
 
@@ -94,27 +169,33 @@ int Connect::recieveMessage() {
         return -1;
     }
 
-    std::vector<unsigned char> plaintext = decryptRecievedMessage(ciphertext);
+    std::vector<unsigned char> plaintext = decryptReceivedMessage(ciphertext);
     HeaderMessage myMessageHeader;
     memcpy(&myMessageHeader, plaintext.data(), sizeof(HeaderMessage));
+    if (sendACK(plaintext.data(), plaintext.size(), HEADER)) {
+        std::cout << "Failed to send ACK";
+        return -1;
+    }
     if (myMessageHeader.messageType == TEXT) {
         ciphertext.resize(myMessageHeader.bit_length + crypto_auth_BYTES + crypto_secretbox_MACBYTES);
         r = recv(cur_socket, ciphertext.data(), ciphertext.size(), MSG_WAITALL);
         if (r != (ssize_t)ciphertext.size()) {
             std::cerr << "Failed to receive full ciphertext\n";
-            close(cur_socket);
-            return -1;
         }
-        std::vector<unsigned char> plaintext = decryptRecievedMessage(ciphertext);
+        std::vector<unsigned char> plaintext = decryptReceivedMessage(ciphertext);
         std::cout << "Plaintext: ";
         for (unsigned char c : plaintext) {
             std::cout << c;
         }
         std::cout << std::endl;
+        if (sendACK(plaintext.data(), plaintext.size(), TEXT)) {
+            std::cout << "Failed to send ACK";
+            return -1;
+        }
     }
     return 0;
 }
-std::vector<unsigned char> Connect::decryptRecievedMessage(std::vector<unsigned char> ciphertext) {
+std::vector<unsigned char> Connect::decryptReceivedMessage(std::vector<unsigned char> ciphertext) {
     // Decrypt
     std::vector<unsigned char> decrypted(ciphertext.size() - crypto_secretbox_MACBYTES);
     if (crypto_secretbox_open_easy(decrypted.data(), ciphertext.data(), ciphertext.size(), iv, rx) != 0) {
@@ -203,7 +284,7 @@ int Connect::sendHandshake() {
     }
     return 0;
 }
-int Connect::recieveHandshake() {
+int Connect::receiveHandshake() {
     ssize_t r = recv(cur_socket, &handshake_target, sizeof(handshake_target), MSG_WAITALL);
     if (r != sizeof(handshake_target)) {
         std::cerr << "Failed to receive signature response\n";
@@ -298,7 +379,7 @@ int Connect::getDigitalSignature() {
 
 
     r = recv(clientSocket, &signed_response, sizeof(signed_response), MSG_WAITALL);
-    Logger::Log(std::format("Expected {} recieved actual {} sized message\n", sizeof(signed_response), r));
+    Logger::Log(std::format("Expected {} received actual {} sized message\n", sizeof(signed_response), r));
     if (r != sizeof(signed_response)) {
         std::cerr << "Failed to receive signature response\n";
         close(clientSocket);

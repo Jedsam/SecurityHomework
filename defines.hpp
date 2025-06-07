@@ -5,3 +5,5 @@
 #define MAX_ID_LEN 32
 #define TEXT 'T'
 #define IMAGE 'I'
+#define HEADER 'H'
+#define CLOSE 'C'

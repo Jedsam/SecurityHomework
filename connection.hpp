@@ -24,6 +24,11 @@ struct SignedResponse {
     unsigned char signature[crypto_sign_BYTES];
     unsigned char signer_pk[crypto_sign_PUBLICKEYBYTES];
 };
+struct Acknowledgment {
+    char messageType;
+    int bit_length;
+    int checksum;
+};
 struct HeaderMessage {
     char messageType;
     int bit_length;
@@ -33,11 +38,13 @@ class Connect {
 public:
     int getDigitalSignature();
     int sendDigitalSignature(int serverSocket, unsigned char authority_pk[], unsigned char authority_sk[], size_t authority_pk_size);
-    int recieveHandshake();
-    int recieveMessage();
-    std::vector<unsigned char> decryptRecievedMessage(std::vector<unsigned char> ciphertext);
+    int receiveHandshake();
+    int receiveMessage();
+    int receiveACK(const unsigned char* header_bytes, int header_size, char header_type);
+    std::vector<unsigned char> decryptReceivedMessage(std::vector<unsigned char> ciphertext);
     int sendTextMessage(const std::string& message, int size);
     int sendEncryptedMessage(const unsigned char* message, int size);
+    int sendACK(const unsigned char* header_bytes, int header_size, char header_type);
     int sendHandshake();
     int generateServerSessionKeys();
     int generateClientSessionKeys();
@@ -47,6 +54,7 @@ public:
     void setSocket(int socket);
     explicit Connect(const char *id);
 private:
+    int calculateCheckSum(const unsigned char* header_bytes, int header_size);
     char identifier[MAX_ID_LEN];
     int cur_socket;
     uint64_t message_counter;

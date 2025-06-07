@@ -53,7 +53,7 @@ int main() {
         std::cerr << "Failed to send handshake\n";
         return -1;
     }
-    myConnect.recieveHandshake();
+    myConnect.receiveHandshake();
 
     if (myConnect.generateClientSessionKeys()) {
         std::cerr << "Failed to generate server session keys\n";
