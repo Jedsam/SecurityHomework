@@ -43,7 +43,7 @@ int Connect::sendTextMessage(const std::string& message, int size) {
     unsigned char message_text[sizeof(HeaderMessage)];
     memcpy(message_text, &myMessageHeader, message_size);
 
-    if (sendEncryptedMessage(message_text, message_size)) {
+    if (sendEncryptedMessage(message_text, message_size, HEADER)) {
         std::cerr << "Failed to send encrypted header message.\n";
         return -1;
     }
@@ -53,7 +53,7 @@ int Connect::sendTextMessage(const std::string& message, int size) {
     }
 
     const unsigned char* data = reinterpret_cast<const unsigned char*>(message.data());
-    if (sendEncryptedMessage(data, size)) {
+    if (sendEncryptedMessage(data, size, TEXT)) {
         std::cerr << "Failed to send encrypted text message.\n";
         return -1;
     }
@@ -88,7 +88,7 @@ int Connect::sendImageMessage(std::string file_location) {
     std::memcpy(message_text, &myMessageHeader, message_size);
 
     // Send encrypted header
-    if (sendEncryptedMessage(message_text, message_size)) {
+    if (sendEncryptedMessage(message_text, message_size, HEADER)) {
         std::cerr << "Failed to send encrypted header message.\n";
         return -1;
     }
@@ -98,7 +98,7 @@ int Connect::sendImageMessage(std::string file_location) {
     }
 
     // Send image data
-    if (sendEncryptedMessage(image_data.data(), image_data.size())) {
+    if (sendEncryptedMessage(image_data.data(), image_data.size(), IMAGE)) {
         std::cerr << "Failed to send encrypted image data.\n";
         return -1;
     }
@@ -109,7 +109,7 @@ int Connect::sendImageMessage(std::string file_location) {
 
     return 0;
 }
-int Connect::sendEncryptedMessage(const unsigned char* header_bytes, int header_size) {
+int Connect::sendEncryptedMessage(const unsigned char* header_bytes, int header_size, char header_type) {
     // Compute HMAC-SHA256 (manual HMAC using crypto_auth for simplicity)
     unsigned char header_mac[crypto_auth_BYTES];
     crypto_auth(header_mac, header_bytes, header_size, mac_key_out);
@@ -130,6 +130,7 @@ int Connect::sendEncryptedMessage(const unsigned char* header_bytes, int header_
         close(cur_socket);
         return -1;
     }
+    logConnectionInfo(std::format("send ciphertext with size {} and type {}", header_size, header_type));
     std::cout << "Sending ciphertext size: " << ciphertext.size() << std::endl;
     std::cout << "Encrypted message sent successfully.\n";
     return 0;
@@ -145,10 +146,12 @@ int Connect::sendACK(const unsigned char* header_bytes, int header_size, char he
     unsigned char message_text[sizeof(Acknowledgment)];
     memcpy(message_text, &myAcknowledgment, message_size);
 
-    if (sendEncryptedMessage(message_text, message_size)) {
+    if (sendEncryptedMessage(message_text, message_size, ACK)) {
         std::cerr << "Failed to send encrypted header message.\n";
         return -1;
     }
+    message_counter++;
+    generateNonce();
     return 0;
 }
 int Connect::calculateCheckSum(const unsigned char* header_bytes, int header_size) {
@@ -173,6 +176,7 @@ int Connect::receiveACK(const unsigned char* header_bytes, int header_size, char
         close(cur_socket);
         return -1;
     }
+    logConnectionInfo(std::format("recieved ciphertext with size {} and type {}", header_size, header_type));
 
     std::vector<unsigned char> plaintext = decryptReceivedMessage(ciphertext);
 
@@ -208,6 +212,7 @@ int Connect::receiveMessage() {
         close(cur_socket);
         return -1;
     }
+    logConnectionInfo(std::format("recieved ciphertext with size {} and type {}", ciphertext.size(), HEADER));
 
     std::vector<unsigned char> plaintext = decryptReceivedMessage(ciphertext);
     HeaderMessage myMessageHeader;
@@ -222,6 +227,7 @@ int Connect::receiveMessage() {
         if (r != (ssize_t)ciphertext.size()) {
             std::cerr << "Failed to receive full ciphertext\n";
         }
+        logConnectionInfo(std::format("recieved ciphertext with size {} and type {}", ciphertext.size(), TEXT));
         plaintext = decryptReceivedMessage(ciphertext);
         std::cout << "Plaintext: ";
         for (unsigned char c : plaintext) {
@@ -242,6 +248,7 @@ int Connect::receiveMessage() {
             close(cur_socket);
             return -1;
         }
+        logConnectionInfo(std::format("recieved ciphertext with size {} and type {}", ciphertext.size(), IMAGE));
 
         plaintext = decryptReceivedMessage(ciphertext);
         if (plaintext.empty()) {
@@ -250,7 +257,8 @@ int Connect::receiveMessage() {
         }
 
         // Save the image to disk
-        std::ofstream outFile("output/received_image.jpg", std::ios::binary);
+        std::string file_location = std::format("output/received_image{}.jpg", message_counter);
+        std::ofstream outFile(file_location, std::ios::binary);
         if (!outFile) {
             std::cerr << "Failed to open file for writing image.\n";
             return -1;
@@ -297,7 +305,6 @@ std::vector<unsigned char> Connect::decryptReceivedMessage(std::vector<unsigned 
         std::cerr << "MAC verification failed: message integrity compromised.\n";
         return {};
     }
-    message_counter++;
     generateNonce();
     return plaintext;
 }
@@ -359,6 +366,7 @@ int Connect::sendHandshake() {
         close(cur_socket);
         return -1;
     }
+    logConnectionInfo(std::format("sent ciphertext with size {} and type {}", sizeof(handshake_initiator), "HANDSHAKE"));
     return 0;
 }
 int Connect::receiveHandshake() {
@@ -368,6 +376,7 @@ int Connect::receiveHandshake() {
         close(cur_socket);
         return -1;
     }
+    logConnectionInfo(std::format("recieved ciphertext with size {} and type {}", sizeof(handshake_target), "HANDSHAKE"));
 
     unsigned char msg[MAX_ID_LEN + crypto_kx_PUBLICKEYBYTES];
     std::memcpy(msg, handshake_target.identifier, MAX_ID_LEN);
@@ -386,8 +395,8 @@ int Connect::sendDigitalSignature(int serverSocket, unsigned char authority_pk[]
 
     SignRequest signRequest;
     ssize_t r = recv(clientSocket, &signRequest, sizeof(signRequest), MSG_WAITALL);
+    logConnectionInfo(std::format("recieved sign request with size {} and type {}", r, "NO TYPE"));
 
-    Logger::Log(std::format("Expected {} received actual {} sized message\n", sizeof(signRequest), r));
 
     if (r != sizeof(signRequest)) {
         std::cerr << "Failed to receive complete SignRequest\n";
@@ -413,13 +422,13 @@ int Connect::sendDigitalSignature(int serverSocket, unsigned char authority_pk[]
 
 
     // Send back the signature + signer's public key
-    ssize_t sent = send(clientSocket, &signed_response, sizeof(signed_response), 0);
-    Logger::Log(std::format("Expected {} but sent {} sized message\n", sizeof(signed_response), sent));
-    if (sent != sizeof(signed_response)) {
+    r = send(clientSocket, &signed_response, sizeof(signed_response), 0);
+    if (r != sizeof(signed_response)) {
         std::cerr << "Failed to send signature response\n";
     } else {
         std::cout << "Sent signature to client\n";
     }
+    logConnectionInfo(std::format("sent sign request with size {} and type {}", r, "NO TYPE"));
 
     close(clientSocket);
     return 0;
@@ -451,12 +460,13 @@ int Connect::getDigitalSignature() {
         close(clientSocket);
         return -1;
     }
-    Logger::Log(std::format("Expected {} sent actual {} sized message\n", sizeof(signRequest), r));
+    logConnectionInfo(std::format("sent sign request with size {} and type {}", r, "NO TYPE"));
+
     std::cout << std::format("Sent the identifier and public key!\n");
 
 
     r = recv(clientSocket, &signed_response, sizeof(signed_response), MSG_WAITALL);
-    Logger::Log(std::format("Expected {} received actual {} sized message\n", sizeof(signed_response), r));
+    logConnectionInfo(std::format("recieved signed response with size {} and type {}", r, "NO TYPE"));
     if (r != sizeof(signed_response)) {
         std::cerr << "Failed to receive signature response\n";
         close(clientSocket);
@@ -468,6 +478,9 @@ int Connect::getDigitalSignature() {
     // closing socket
     close(clientSocket);
     return 0;
+}
+void Connect::logConnectionInfo(const std::string& text) {
+    Logger::Log(std::format("Identifier : {} , Message counter : {}", std::string(identifier), message_counter) + " | " + text);
 }
 void Connect::setSocket(int socket) {
     this->cur_socket = socket;

@@ -43,7 +43,7 @@ public:
     int receiveACK(const unsigned char* header_bytes, int header_size, char header_type);
     std::vector<unsigned char> decryptReceivedMessage(std::vector<unsigned char> ciphertext);
     int sendTextMessage(const std::string& message, int size);
-    int sendEncryptedMessage(const unsigned char* message, int size);
+    int sendEncryptedMessage(const unsigned char* message, int size, char header_type);
     int sendImageMessage(std::string file_location);
     int sendACK(const unsigned char* header_bytes, int header_size, char header_type);
     int sendHandshake();
@@ -56,6 +56,7 @@ public:
     explicit Connect(const char *id);
 private:
     int calculateCheckSum(const unsigned char* header_bytes, int header_size);
+    void logConnectionInfo(const std::string& text);
     char identifier[MAX_ID_LEN];
     int cur_socket;
     uint64_t message_counter;

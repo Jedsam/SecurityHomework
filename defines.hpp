@@ -7,3 +7,4 @@
 #define IMAGE 'I'
 #define HEADER 'H'
 #define CLOSE 'C'
+#define ACK 'A'

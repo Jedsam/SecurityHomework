@@ -1,5 +1,7 @@
 #pragma once
+#include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <string>
 #include <mutex>
 
@@ -15,9 +17,18 @@ public:
 
     // Log a message to the file
     static void Log(const std::string& message) {
+        auto t = std::time(nullptr);
+        auto tm = *std::localtime(&t);
+
+        std::ostringstream oss;
+        oss << std::put_time(&tm, "%d-%m-%Y %H-%M-%S");
+        std::string time_str = oss.str();
+
+        std::string log_message = time_str + " " + message;
+
         std::lock_guard<std::mutex> lock(mutex_);
         if (ofs_.is_open()) {
-            ofs_ << message << std::endl;
+            ofs_ << log_message << std::endl;
         }
     }
 
