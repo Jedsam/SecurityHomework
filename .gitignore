@@ -58,3 +58,7 @@ server
 
 # log files
 *_log.txt
+
+# input/output folder
+input/
+output/

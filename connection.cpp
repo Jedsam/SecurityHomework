@@ -64,6 +64,51 @@ int Connect::sendTextMessage(const std::string& message, int size) {
 
     return 0;
 }
+int Connect::sendImageMessage(std::string file_location) {
+    // Open image file in binary mode
+    std::ifstream file(file_location, std::ios::binary);
+    if (!file) {
+        std::cerr << "Failed to open image file: " << file_location << std::endl;
+        return -1;
+    }
+
+    // Read file content into a vector
+    std::vector<unsigned char> image_data((std::istreambuf_iterator<char>(file)),
+                                          std::istreambuf_iterator<char>());
+    file.close();
+
+    // Prepare header
+    HeaderMessage myMessageHeader;
+    myMessageHeader.messageType = IMAGE;
+    myMessageHeader.bit_length = image_data.size();  // file size in bytes
+
+    // Serialize header
+    int message_size = sizeof(HeaderMessage);
+    unsigned char message_text[sizeof(HeaderMessage)];
+    std::memcpy(message_text, &myMessageHeader, message_size);
+
+    // Send encrypted header
+    if (sendEncryptedMessage(message_text, message_size)) {
+        std::cerr << "Failed to send encrypted header message.\n";
+        return -1;
+    }
+    if (receiveACK(message_text, message_size, HEADER)) {
+        std::cerr << "Failed to receive ACK\n";
+        return -1;
+    }
+
+    // Send image data
+    if (sendEncryptedMessage(image_data.data(), image_data.size())) {
+        std::cerr << "Failed to send encrypted image data.\n";
+        return -1;
+    }
+    if (receiveACK(image_data.data(), image_data.size(), IMAGE)) {
+        std::cerr << "Failed to receive ACK\n";
+        return -1;
+    }
+
+    return 0;
+}
 int Connect::sendEncryptedMessage(const unsigned char* header_bytes, int header_size) {
     // Compute HMAC-SHA256 (manual HMAC using crypto_auth for simplicity)
     unsigned char header_mac[crypto_auth_BYTES];
@@ -106,6 +151,19 @@ int Connect::sendACK(const unsigned char* header_bytes, int header_size, char he
     }
     return 0;
 }
+int Connect::calculateCheckSum(const unsigned char* header_bytes, int header_size) {
+    const size_t HASH_LEN = 4;
+    unsigned char hash[HASH_LEN];
+
+    crypto_generichash(hash, HASH_LEN, header_bytes, header_size, nullptr, 0);
+
+    // Convert 4-byte hash to a uint32_t
+    uint32_t checksum;
+    std::memcpy(&checksum, hash, sizeof(checksum));
+
+    std::cout << "Checksum (uint32_t): " << checksum << std::endl;
+    return checksum;
+}
 int Connect::receiveACK(const unsigned char* header_bytes, int header_size, char header_type) {
     std::vector<unsigned char> ciphertext(sizeof(Acknowledgment) + crypto_auth_BYTES + crypto_secretbox_MACBYTES);
 
@@ -139,25 +197,7 @@ int Connect::receiveACK(const unsigned char* header_bytes, int header_size, char
     generateNonce();
     return 0;
 }
-int Connect::calculateCheckSum(const unsigned char* header_bytes, int header_size) {
-    const size_t HASH_LEN = 4;
-    unsigned char hash[HASH_LEN];
 
-    std::cout << "Hash Data (hex): ";
-    for (int i = 0; i < header_size; ++i) {
-        printf("%02X ", header_bytes[i]);  // or use std::hex for C++ style
-    }
-    std::cout << std::endl;
-
-    crypto_generichash(hash, HASH_LEN, header_bytes, header_size, nullptr, 0);
-
-    // Convert 4-byte hash to a uint32_t
-    uint32_t checksum;
-    std::memcpy(&checksum, hash, sizeof(checksum));
-
-    std::cout << "Checksum (uint32_t): " << checksum << std::endl;
-    return checksum;
-}
 int Connect::receiveMessage() {
     // Receive ciphertext
     std::vector<unsigned char> ciphertext(sizeof(HeaderMessage) + crypto_auth_BYTES + crypto_secretbox_MACBYTES);
@@ -192,6 +232,40 @@ int Connect::receiveMessage() {
             std::cout << "Failed to send ACK";
             return -1;
         }
+    } else if (myMessageHeader.messageType == IMAGE) {
+        // Resize ciphertext buffer to fit the incoming image data
+        ciphertext.resize(myMessageHeader.bit_length + crypto_auth_BYTES + crypto_secretbox_MACBYTES);
+
+        r = recv(cur_socket, ciphertext.data(), ciphertext.size(), MSG_WAITALL);
+        if (r != (ssize_t)ciphertext.size()) {
+            std::cerr << "Failed to receive full image ciphertext\n";
+            close(cur_socket);
+            return -1;
+        }
+
+        std::vector<unsigned char> plaintext = decryptReceivedMessage(ciphertext);
+        if (plaintext.empty()) {
+            std::cerr << "Decryption failed for image data.\n";
+            return -1;
+        }
+
+        // Save the image to disk
+        std::ofstream outFile("output/received_image.jpg", std::ios::binary);
+        if (!outFile) {
+            std::cerr << "Failed to open file for writing image.\n";
+            return -1;
+        }
+        outFile.write(reinterpret_cast<const char*>(plaintext.data()), plaintext.size());
+        outFile.close();
+
+        std::cout << "Image received and saved to 'output/received_image.jpg'\n";
+
+        // Send ACK for image data
+        if (sendACK(plaintext.data(), plaintext.size(), IMAGE)) {
+            std::cerr << "Failed to send ACK for image\n";
+            return -1;
+        }
+
     }
     return 0;
 }

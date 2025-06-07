@@ -75,7 +75,7 @@ int main() {
 
         counter = 0;
         stopConnection = myConnect.receiveMessage();
-        while(!stopConnection) {
+        while (!stopConnection) {
             stopConnection = myConnect.receiveMessage();
             if (stopConnection == -1) {
                 std::cerr << "Failed to receive message\n";

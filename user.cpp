@@ -85,7 +85,12 @@ int main() {
                 return -1;
             }
         } else if (decision == 2) {
+            std::cout << "Enter the image path: \n";
             std::getline(std::cin, plaintext);
+            if (myConnect.sendImageMessage(plaintext)) {
+                std::cerr << "Failed to receive message\n";
+                return -1;
+            }
 
         } else if (decision == 3) {
         }

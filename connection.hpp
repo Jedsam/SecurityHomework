@@ -44,6 +44,7 @@ public:
     std::vector<unsigned char> decryptReceivedMessage(std::vector<unsigned char> ciphertext);
     int sendTextMessage(const std::string& message, int size);
     int sendEncryptedMessage(const unsigned char* message, int size);
+    int sendImageMessage(std::string file_location);
     int sendACK(const unsigned char* header_bytes, int header_size, char header_type);
     int sendHandshake();
     int generateServerSessionKeys();
