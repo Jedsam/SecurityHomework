@@ -54,6 +54,7 @@ public:
     void closeSocket();
     void setSocket(int socket);
     explicit Connect(const char *id);
+    static std::string to_hex(const unsigned char* data, size_t len);
 private:
     int calculateCheckSum(const unsigned char* header_bytes, int header_size);
     void logConnectionInfo(const std::string& text);

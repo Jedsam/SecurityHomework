@@ -130,7 +130,7 @@ int Connect::sendEncryptedMessage(const unsigned char* header_bytes, int header_
         close(cur_socket);
         return -1;
     }
-    logConnectionInfo(std::format("send ciphertext with size {} and type {}", header_size, header_type));
+    logConnectionInfo(std::format("send ciphertext with size {} and type {} : {}", header_size, header_type, to_hex(ciphertext.data(), ciphertext.size())));
     std::cout << "Sending ciphertext size: " << ciphertext.size() << std::endl;
     std::cout << "Encrypted message sent successfully.\n";
     return 0;
@@ -176,7 +176,7 @@ int Connect::receiveACK(const unsigned char* header_bytes, int header_size, char
         close(cur_socket);
         return -1;
     }
-    logConnectionInfo(std::format("recieved ciphertext with size {} and type {}", header_size, header_type));
+    logConnectionInfo(std::format("send ciphertext with size {} and type {} : {}", header_size, header_type, to_hex(ciphertext.data(), ciphertext.size())));
 
     std::vector<unsigned char> plaintext = decryptReceivedMessage(ciphertext);
 
@@ -212,7 +212,7 @@ int Connect::receiveMessage() {
         close(cur_socket);
         return -1;
     }
-    logConnectionInfo(std::format("recieved ciphertext with size {} and type {}", ciphertext.size(), HEADER));
+    logConnectionInfo(std::format("received ciphertext with size {} and type {} : {}", ciphertext.size(), HEADER, to_hex(ciphertext.data(), ciphertext.size())));
 
     std::vector<unsigned char> plaintext = decryptReceivedMessage(ciphertext);
     HeaderMessage myMessageHeader;
@@ -227,7 +227,7 @@ int Connect::receiveMessage() {
         if (r != (ssize_t)ciphertext.size()) {
             std::cerr << "Failed to receive full ciphertext\n";
         }
-        logConnectionInfo(std::format("recieved ciphertext with size {} and type {}", ciphertext.size(), TEXT));
+        logConnectionInfo(std::format("received ciphertext with size {} and type {} : {}", ciphertext.size(), TEXT, to_hex(ciphertext.data(), ciphertext.size())));
         plaintext = decryptReceivedMessage(ciphertext);
         std::cout << "Plaintext: ";
         for (unsigned char c : plaintext) {
@@ -248,7 +248,7 @@ int Connect::receiveMessage() {
             close(cur_socket);
             return -1;
         }
-        logConnectionInfo(std::format("recieved ciphertext with size {} and type {}", ciphertext.size(), IMAGE));
+        logConnectionInfo(std::format("received ciphertext with size {} and type {} : {}", ciphertext.size(), IMAGE, to_hex(ciphertext.data(), ciphertext.size())));
 
         plaintext = decryptReceivedMessage(ciphertext);
         if (plaintext.empty()) {
@@ -366,7 +366,7 @@ int Connect::sendHandshake() {
         close(cur_socket);
         return -1;
     }
-    logConnectionInfo(std::format("sent ciphertext with size {} and type {}", sizeof(handshake_initiator), "HANDSHAKE"));
+    logConnectionInfo(std::format("sent text with size {} and type {} : signature:{} identifier:{} publickey:{} nonce:{} ", sizeof(handshake_initiator), "HANDSHAKE", to_hex(handshake_initiator.signature, sizeof(handshake_initiator.signature)), to_hex(handshake_initiator.identifier, sizeof(handshake_initiator.identifier)), to_hex(handshake_initiator.public_key, sizeof(handshake_initiator.public_key)), to_hex(handshake_initiator.nonce, sizeof(handshake_initiator.nonce))));
     return 0;
 }
 int Connect::receiveHandshake() {
@@ -376,7 +376,7 @@ int Connect::receiveHandshake() {
         close(cur_socket);
         return -1;
     }
-    logConnectionInfo(std::format("recieved ciphertext with size {} and type {}", sizeof(handshake_target), "HANDSHAKE"));
+    logConnectionInfo(std::format("received text with size {} and type {} : signature:{} identifier:{} publickey:{} nonce:{} ", sizeof(handshake_target), "HANDSHAKE", to_hex(handshake_target.signature, sizeof(handshake_target.signature)), to_hex(handshake_target.identifier, sizeof(handshake_target.identifier)), to_hex(handshake_target.public_key, sizeof(handshake_target.public_key)), to_hex(handshake_target.nonce, sizeof(handshake_target.nonce))));
 
     unsigned char msg[MAX_ID_LEN + crypto_kx_PUBLICKEYBYTES];
     std::memcpy(msg, handshake_target.identifier, MAX_ID_LEN);
@@ -395,7 +395,7 @@ int Connect::sendDigitalSignature(int serverSocket, unsigned char authority_pk[]
 
     SignRequest signRequest;
     ssize_t r = recv(clientSocket, &signRequest, sizeof(signRequest), MSG_WAITALL);
-    logConnectionInfo(std::format("recieved sign request with size {} and type {}", r, "NO TYPE"));
+    logConnectionInfo(std::format("received sign request with size {} and type {} : identifier:{} publickey:{}", r, "NO TYPE", to_hex(signRequest.identifier, sizeof(signRequest.identifier)), to_hex(signRequest.public_key, sizeof(signRequest.public_key))));
 
 
     if (r != sizeof(signRequest)) {
@@ -428,7 +428,7 @@ int Connect::sendDigitalSignature(int serverSocket, unsigned char authority_pk[]
     } else {
         std::cout << "Sent signature to client\n";
     }
-    logConnectionInfo(std::format("sent sign request with size {} and type {}", r, "NO TYPE"));
+    logConnectionInfo(std::format("sent signed response with size {} and type {} : signature:{} signer_publickkey:{}", r, "NO TYPE", to_hex(signed_response.signature, sizeof(signed_response.signature)), to_hex(signed_response.signer_pk, sizeof(signed_response.signer_pk))));
 
     close(clientSocket);
     return 0;
@@ -460,13 +460,13 @@ int Connect::getDigitalSignature() {
         close(clientSocket);
         return -1;
     }
-    logConnectionInfo(std::format("sent sign request with size {} and type {}", r, "NO TYPE"));
+    logConnectionInfo(std::format("sent sign request with size {} and type {} : identifier:{} publickey:{}", r, "NO TYPE", to_hex(signRequest.identifier, sizeof(signRequest.identifier)), to_hex(signRequest.public_key, sizeof(signRequest.public_key))));
 
     std::cout << std::format("Sent the identifier and public key!\n");
 
 
     r = recv(clientSocket, &signed_response, sizeof(signed_response), MSG_WAITALL);
-    logConnectionInfo(std::format("recieved signed response with size {} and type {}", r, "NO TYPE"));
+    logConnectionInfo(std::format("received signed response with size {} and type {} : signature:{} signer_publickkey:{}", r, "NO TYPE", to_hex(signed_response.signature, sizeof(signed_response.signature)), to_hex(signed_response.signer_pk, sizeof(signed_response.signer_pk))));
     if (r != sizeof(signed_response)) {
         std::cerr << "Failed to receive signature response\n";
         close(clientSocket);
@@ -487,4 +487,12 @@ void Connect::setSocket(int socket) {
 }
 void Connect::closeSocket() {
     close(cur_socket);
+}
+std::string Connect::to_hex(const unsigned char* data, size_t len) {
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (size_t i = 0; i < len; i++) {
+        oss << std::setw(2) << static_cast<int>(data[i]);
+    }
+    return oss.str();
 }
